@@ -8,7 +8,10 @@
  */
 package org.acme.services;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.keycloak.representations.idm.GroupRepresentation;
@@ -29,9 +32,12 @@ public class GroupService {
     public final List<String> groupNames = List.of("Administrators", "Owner", "Sales", "Sales Administrator");
 
     public void createGroup(String name) {
-
+        Map<String, List<String>> attributes = new HashMap<>();
+        attributes.put("createdBy", List.of(jwt.getSubject()));
+        attributes.put("enabled", List.of("true"));
         GroupRepresentation parentGroup = new GroupRepresentation();
         parentGroup.setName(name);
+        parentGroup.setAttributes(attributes);
 
         keycloakProvider.getClient().realm("gyms-app").groups().add(parentGroup);
 
@@ -44,13 +50,12 @@ public class GroupService {
         for (String groupName : groupNames) {
             GroupRepresentation subGroup = new GroupRepresentation();
             subGroup.setName(groupName);
+            subGroup.setAttributes(attributes);
             Response response = keycloakProvider.getClient().realm("gyms-app")
                     .groups().group(createdParent.getId()).subGroup(subGroup);
 
-            // Extract the created subgroup ID from the response
             String createdSubGroupId = extractIdFromLocationHeader(response);
 
-            // Add the user to the newly created subgroup
             keycloakProvider.getClient().realm("gyms-app")
                     .users().get(jwt.getSubject())
                     .joinGroup(createdSubGroupId);
@@ -61,9 +66,61 @@ public class GroupService {
 
     }
 
+    public void LeaveGroup(String groupId) {
+        keycloakProvider.getClient().realm("gyms-app")
+                .users().get(jwt.getSubject())
+                .leaveGroup(groupId);
+    }
+
+    public void DestroyGroup(String groupId) {
+        String currentUserId = jwt.getSubject();
+
+        GroupRepresentation group = keycloakProvider.getClient().realm("gyms-app")
+                .groups().group(groupId).toRepresentation();
+
+        if (group.getAttributes() == null ||
+                !group.getAttributes().containsKey("createdBy")) {
+            throw new SecurityException("Group creator information not found");
+        }
+
+        List<String> createdByValues = group.getAttributes().get("createdBy");
+        if (createdByValues.isEmpty()) {
+            throw new SecurityException("Group creator information not found");
+        }
+
+        String groupCreatorId = createdByValues.get(0);
+
+        if (!currentUserId.equals(groupCreatorId)) {
+            throw new SecurityException("Only the group creator can destroy this group");
+        }
+
+        keycloakProvider.getClient().realm("gyms-app")
+                .groups().group(groupId).remove();
+    }
+
+    public void groupAttributeUpdate(String groupId, String attributeName, String newValue) {
+        updateGroupAttribute(groupId, attributeName, newValue);
+    }
+
     private String extractIdFromLocationHeader(Response response) {
         String location = response.getHeaderString("Location");
         return location.substring(location.lastIndexOf('/') + 1);
+    }
+
+    public void updateGroupAttribute(String groupId, String attributeName, String newValue) {
+        GroupRepresentation group = keycloakProvider.getClient().realm("gyms-app")
+                .groups().group(groupId).toRepresentation();
+
+        Map<String, List<String>> attributes = group.getAttributes();
+        if (attributes == null) {
+            attributes = new HashMap<>();
+        }
+        attributes.put(attributeName, Arrays.asList(newValue));
+
+        group.setAttributes(attributes);
+
+        keycloakProvider.getClient().realm("gyms-app")
+                .groups().group(groupId).update(group);
     }
 
 }
