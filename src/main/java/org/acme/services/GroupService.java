@@ -14,7 +14,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
+import org.keycloak.admin.client.resource.GroupResource;
+import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.GroupRepresentation;
+import org.keycloak.representations.idm.RoleRepresentation;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -29,7 +32,13 @@ public class GroupService {
     @Inject
     JsonWebToken jwt;
 
-    public final List<String> groupNames = List.of("Administrators", "Owner", "Sales", "Sales Administrator");
+    private static final Map<String, List<String>> GROUP_ROLE_MAPPING = Map.of(
+            "Administrators", List.of("create-group"),
+            "Owner", List.of("create-group"),
+            "Sales", List.of("create-group"),
+            "Sales Administrator", List.of("create-group"),
+            "Trainer", List.of("create-group"),
+            "Member", List.of("create-group"));
 
     public void createGroup(String name) {
         Map<String, List<String>> attributes = new HashMap<>();
@@ -47,20 +56,23 @@ public class GroupService {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("Parent group not found"));
 
-        for (String groupName : groupNames) {
+        for (String groupName : GROUP_ROLE_MAPPING.keySet()) {
             GroupRepresentation subGroup = new GroupRepresentation();
             subGroup.setName(groupName);
             subGroup.setAttributes(attributes);
-            Response response = keycloakProvider.getClient().realm("gyms-app")
-                    .groups().group(createdParent.getId()).subGroup(subGroup);
+            try (Response response = keycloakProvider.getClient().realm("gyms-app")
+                    .groups().group(createdParent.getId()).subGroup(subGroup)) {
+                String createdSubGroupId = extractIdFromLocationHeader(response);
 
-            String createdSubGroupId = extractIdFromLocationHeader(response);
+                List<String> rolesForGroup = GROUP_ROLE_MAPPING.getOrDefault(groupName, List.of());
+                if (!rolesForGroup.isEmpty()) {
+                    assignRolesToGroup(createdSubGroupId, rolesForGroup);
+                }
 
-            keycloakProvider.getClient().realm("gyms-app")
-                    .users().get(jwt.getSubject())
-                    .joinGroup(createdSubGroupId);
-
-            response.close();
+                keycloakProvider.getClient().realm("gyms-app")
+                        .users().get(jwt.getSubject())
+                        .joinGroup(createdSubGroupId);
+            }
 
         }
 
@@ -121,6 +133,17 @@ public class GroupService {
 
         keycloakProvider.getClient().realm("gyms-app")
                 .groups().group(groupId).update(group);
+    }
+
+    private void assignRolesToGroup(String groupId, List<String> roleNames) {
+        RealmResource realm = keycloakProvider.getClient().realm("gyms-app");
+        GroupResource groupResource = realm.groups().group(groupId);
+
+        List<RoleRepresentation> roles = roleNames.stream()
+                .map(roleName -> realm.roles().get(roleName).toRepresentation())
+                .toList();
+
+        groupResource.roles().realmLevel().add(roles);
     }
 
 }

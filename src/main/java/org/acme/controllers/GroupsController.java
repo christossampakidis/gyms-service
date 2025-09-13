@@ -13,7 +13,6 @@ import org.acme.services.GroupService;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.jboss.resteasy.reactive.RestResponse;
 
-import io.quarkus.security.Authenticated;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -35,10 +34,10 @@ public class GroupsController {
     @Path("/create")
     @Consumes("application/json")
     @Operation(summary = "Create a new group", description = "Creates a group with the provided details")
-    @Authenticated
     public RestResponse<Void> createGroup(GroupCreationRequest request) {
         try {
             groupService.createGroup(request.getName());
+
         } catch (Exception e) {
             return RestResponse.status(Response.Status.INTERNAL_SERVER_ERROR);
         }
@@ -48,7 +47,6 @@ public class GroupsController {
     @DELETE
     @Path("/destroy/{groupId}")
     @Operation(summary = "Destroy a group", description = "Destroys a group with the provided groupId")
-    @Authenticated
     public RestResponse<Void> destroyGroup(@PathParam("groupId") String groupId) {
         try {
             groupService.DestroyGroup(groupId);
@@ -61,7 +59,6 @@ public class GroupsController {
     @PATCH
     @Path("/update-attribute/{groupId}/{attributeName}/{newValue}")
     @Operation(summary = "Update group attribute", description = "Updates a specific attribute of a group")
-    @Authenticated
     public RestResponse<Void> updateGroupAttribute(@PathParam("groupId") String groupId,
             @PathParam("attributeName") String attributeName, @PathParam("newValue") String newValue) {
         try {
