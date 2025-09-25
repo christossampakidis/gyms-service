@@ -18,6 +18,8 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
     ports:
       - "8080:8080"
+    volumes:
+      - ./themes:/opt/keycloak/providers/
     depends_on:
       - postgres
     command: start-dev
